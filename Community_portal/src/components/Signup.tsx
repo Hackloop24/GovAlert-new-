@@ -3,7 +3,7 @@ import google from "../assets/google.png";
 import { signInWithPopup } from "firebase/auth";
 import { auth, googleProvider } from "../firebase/setup";
 import { useNavigate } from "react-router-dom";
-import { GOVALERT_URL } from "../config";
+import { BASE, GOVALERT_URL } from "../config";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -36,7 +36,7 @@ const Signup = () => {
           <a href={`${GOVALERT_URL}/login`} className="flex items-center space-x-1 text-gray-300 hover:text-blue-400">
             <i className="fa fa-flag"></i><span>Report</span>
           </a>
-          <a href="/about" className="flex items-center space-x-1 text-gray-300 hover:text-blue-400">
+          <a href={`${BASE}about`} className="flex items-center space-x-1 text-gray-300 hover:text-blue-400">
             <i className="fa fa-info-circle"></i><span>About Us</span>
           </a>
         </div>

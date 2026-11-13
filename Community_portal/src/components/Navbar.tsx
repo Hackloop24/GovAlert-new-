@@ -5,7 +5,7 @@ import Avatar from "react-avatar";
 import PostPopup from "./PostPopup";
 import { useState } from "react";
 // The GovAlert app runs separately, so links to it are plain <a> tags
-import { GOVALERT_URL } from "../config";
+import { BASE, GOVALERT_URL } from "../config";
 type SearchProp = {
   setSearch: (value: string) => void;
 };
@@ -38,7 +38,7 @@ const Navbar = (props: SearchProp) => {
             <i className="fa fa-th-large"></i><span>Main</span>
           </a>
           <a
-            href="/main"
+            href={`${BASE}main`}
             className="flex items-center space-x-1 text-gray-300 hover:text-blue-400"
           >
             <i className="fa fa-home"></i><span>Home</span>

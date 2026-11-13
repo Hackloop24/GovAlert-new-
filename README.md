@@ -44,15 +44,51 @@ starts. Admins sign in from the **Admin** tab on the Sign In page.
 
 Without SMTP settings, sign-up verification codes are printed in the backend terminal (development only).
 
-## Deploying
+## Deploying to Vercel (everything in one project)
 
-- Set `NODE_ENV=production` in `Backend/.env`. The backend then refuses to start without a strong
-  `JWT_SECRET`, requires a 12+ character admin password and never prints verification codes.
-- Set `CLIENT_ORIGINS` to your deployed frontend URLs and `TRUST_PROXY=1` behind a proxy/load balancer.
+One Vercel project serves all three parts from a single domain:
+
+| URL | Serves |
+|---|---|
+| `/` | GovAlert |
+| `/community` | Community portal |
+| `/api/*` | Backend (Express, as a serverless function in `api/index.js`) |
+
+`vercel.json` holds the build and routing settings, so no build settings need changing in Vercel.
+
+1. **Database** - create a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster. Add a database
+   user, and under *Network Access* allow `0.0.0.0/0` (Vercel has no fixed IP addresses). Copy the
+   connection string (`mongodb+srv://...`).
+2. **Import** - on [vercel.com/new](https://vercel.com/new) import this GitHub repository. Leave the
+   framework preset as *Other* and the root directory as `./`.
+3. **Environment variables** (Project → Settings → Environment Variables):
+
+   | Name | Value |
+   |---|---|
+   | `MONGO_URI` | Atlas connection string |
+   | `JWT_SECRET` | random, 32+ characters |
+   | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | admin login (password 12+ characters) |
+   | `NODE_ENV` | `production` |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | email for verification codes (required in production) |
+   | `GOOGLE_CLIENT_ID` | optional, for "Continue with Google" |
+   | `VITE_FIREBASE_*` (6 values) | Firebase web config for the Community portal |
+
+4. **File storage** - Project → Storage → *Create* → **Blob**, and connect it to the project. This adds
+   `BLOB_READ_WRITE_TOKEN` automatically. (Vercel's disk is read-only, so uploads need Blob.)
+5. **Deploy** (or redeploy after adding the variables).
+6. **Google sign-in** - add `https://<your-project>.vercel.app` to the OAuth client's *Authorized
+   JavaScript origins*. **Firebase** - add the domain under Authentication → Settings → Authorized domains.
+
+Notes: on Vercel each upload request is limited to 4 MB in total (photos are resized in the browser
+first); the API and frontends share one domain, so no CORS or URL settings are needed.
+
+### Other hosts
+
+- Set `NODE_ENV=production`: the backend then refuses to start without a strong `JWT_SECRET`, requires
+  a 12+ character admin password and never prints verification codes.
+- Set `CLIENT_ORIGINS` to your frontend URLs, and `TRUST_PROXY=1` behind a proxy/load balancer.
 - Set `VITE_API_URL` / `VITE_COMMUNITY_URL` (GovAlert) and `VITE_GOVALERT_URL` (Community portal)
-  before building the frontends.
-- Add your deployed frontend URL to the Google OAuth client's **Authorized JavaScript origins**.
-- Serve everything over HTTPS.
+  before building the frontends. Serve everything over HTTPS.
 
 ## Security
 

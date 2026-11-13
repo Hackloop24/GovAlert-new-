@@ -4,6 +4,7 @@ import axios from "axios";
 import { API_URL, authHeader, clearSession, fileUrl, getSession } from "../auth";
 import { STATUSES, STATUS_STYLE, formatINR, placeOf } from "../status";
 import { useToast } from "../components/Toaster";
+import { compressImage } from "../compressImage";
 
 const field = "px-3 py-2 bg-gray-900 text-gray-200 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500";
 
@@ -132,7 +133,10 @@ function ReportRow({ report, onSaved, onAuthError }) {
         <label className="text-sm text-gray-400 md:col-span-2">
           Proof of work (photo, video or PDF, optional)
           <input key={fileKey} type="file" accept="image/*,video/*,application/pdf"
-                 onChange={(e) => setResponseProof(e.target.files?.[0] || null)}
+                 onChange={async (e) => {
+                   const file = e.target.files?.[0];
+                   setResponseProof(file ? await compressImage(file) : null);
+                 }}
                  className="block w-full mt-1 text-gray-300" />
         </label>
       </div>

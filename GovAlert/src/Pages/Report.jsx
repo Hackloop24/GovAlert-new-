@@ -4,6 +4,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import NavBar from "../components/NavBar";
 import LocationPicker from "../components/LocationPicker";
 import { useToast } from "../components/Toaster";
+import { compressImage } from "../compressImage";
 import { API_URL, authHeader, clearSession, getSession } from "../auth";
 
 const FIELDS = [
@@ -14,7 +15,10 @@ const FIELDS = [
   { name: "pincode", label: "Pincode", placeholder: "6-digit pincode" },
 ];
 const MAX_FILES = 5;
-const MAX_SIZE = 10 * 1024 * 1024;
+// Hosted (Vercel) requests are capped at ~4.5 MB in total; local development allows more
+const MAX_SIZE = import.meta.env.PROD ? 4 * 1024 * 1024 : 10 * 1024 * 1024;
+const MAX_TOTAL = import.meta.env.PROD ? 4 * 1024 * 1024 : 50 * 1024 * 1024;
+const mb = (bytes) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
 const inputClass = "w-full p-2 rounded-md bg-gray-800 text-gray-200 border border-gray-700 focus:outline-none focus:border-blue-500";
 
@@ -49,6 +53,7 @@ const Report = () => {
   const [location, setLocation] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [geo, setGeo] = useState({ loading: false, message: "", ok: true });
   const geoRequest = useRef(0);
 
@@ -89,12 +94,23 @@ const Report = () => {
     }
   };
 
-  const handleFiles = (e) => {
-    const picked = Array.from(e.target.files || []);
+  const handleFiles = async (e) => {
+    const input = e.target;
+    const picked = Array.from(input.files || []);
     setError("");
     if (picked.length > MAX_FILES) return setError(`You can attach up to ${MAX_FILES} files.`);
-    if (picked.some((f) => f.size > MAX_SIZE)) return setError("Each file must be under 10 MB.");
-    setFiles(picked);
+
+    setPreparing(true);
+    const ready = await Promise.all(picked.map((f) => compressImage(f)));
+    setPreparing(false);
+
+    const total = ready.reduce((sum, f) => sum + f.size, 0);
+    if (ready.some((f) => f.size > MAX_SIZE) || total > MAX_TOTAL) {
+      input.value = "";
+      setFiles([]);
+      return setError(`Files are too large: keep each under ${mb(MAX_SIZE)} and all together under ${mb(MAX_TOTAL)}. Photos are shrunk automatically; for videos, use a short clip.`);
+    }
+    setFiles(ready);
   };
 
   const handleSubmit = async (e) => {
@@ -168,14 +184,22 @@ const Report = () => {
 
           <div>
             <label htmlFor="proof" className="block text-gray-200 mb-1">
-              Upload Proof <span className="text-gray-500">(photos, videos or PDF - up to 5 files, 10 MB each)</span>
+              Upload Proof <span className="text-gray-500">(photos, videos or PDF - up to 5 files, {mb(MAX_TOTAL)} in total; photos are resized automatically)</span>
             </label>
             <input type="file" id="proof" multiple accept="image/*,video/*,application/pdf"
                    onChange={handleFiles} className="block w-full text-gray-200" />
             {files.length > 0 && (
               <ul className="text-gray-400 text-sm mt-1">
-                {files.map((f) => <li key={f.name}><i className="fa-solid fa-paperclip mr-1"></i>{f.name}</li>)}
+                {files.map((f) => (
+                  <li key={f.name}>
+                    <i className="fa-solid fa-paperclip mr-1"></i>{f.name}
+                    <span className="text-gray-500"> ({Math.max(1, Math.round(f.size / 1024))} KB)</span>
+                  </li>
+                ))}
               </ul>
+            )}
+            {preparing && (
+              <p className="text-gray-400 text-sm mt-1"><i className="fa-solid fa-spinner fa-spin mr-1"></i>Preparing photos...</p>
             )}
           </div>
 

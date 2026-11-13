@@ -1,13 +1,18 @@
 {
   "name": "grievance-portal",
   "private": true,
+  "type": "module",
   "description": "Combined workspace: Backend (Express + MongoDB), GovAlert and Community_portal",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "install:all": "npm install && npm install --prefix Backend && npm install --prefix GovAlert && npm install --prefix Community_portal",
     "dev": "concurrently -k -n backend,govalert,community -c blue,green,magenta \"npm:dev:backend\" \"npm:dev:govalert\" \"npm:dev:community\"",
     "dev:backend": "cd Backend && npx nodemon --ignore uploads/ index.js",
     "dev:govalert": "npm run dev --prefix GovAlert",
-    "dev:community": "npm run dev --prefix Community_portal"
+    "dev:community": "npm run dev --prefix Community_portal",
+    "vercel-build": "npm run build --prefix GovAlert && npm run build --prefix Community_portal -- --base=/community/ && node scripts/combine-builds.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

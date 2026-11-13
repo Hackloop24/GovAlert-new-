@@ -12,44 +12,54 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
+import { put, del } from "@vercel/blob";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { mailConfigured, sendVerificationCode, verifyMailer } from "./mailer.js";
 
 // Load env
 dotenv.config();
-const IS_PROD = process.env.NODE_ENV === "production";
+const ON_VERCEL = Boolean(process.env.VERCEL); // running as a Vercel serverless function
+const IS_PROD = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+
+// Stops the server on a configuration error. On Vercel there is no process to exit,
+// so throw instead - the message shows up in the function logs.
+function fatal(message) {
+  console.error(message);
+  if (ON_VERCEL) throw new Error(message);
+  process.exit(1);
+}
 
 // ------------------ CONFIG CHECKS ------------------
 
-if (!process.env.MONGO_URI) {
-  console.error("MONGO_URI is not set. Copy Backend/.env.example to Backend/.env and fill it in.");
-  process.exit(1);
-}
+if (!process.env.MONGO_URI) fatal("MONGO_URI is not set. Copy Backend/.env.example to Backend/.env (or add it in Vercel) and fill it in.");
 
 // Signing key for login tokens. Never fall back to a fixed value: anyone reading the
 // source could then forge admin tokens. In development a random key is generated
 // per run (everyone is logged out on restart); in production it is required.
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
-  if (IS_PROD) {
-    console.error("JWT_SECRET must be set to a random string of at least 32 characters in production.");
-    process.exit(1);
-  }
+  if (IS_PROD || ON_VERCEL) fatal("JWT_SECRET must be set to a random string of at least 32 characters.");
   JWT_SECRET = crypto.randomBytes(48).toString("hex");
   console.warn("JWT_SECRET missing or too short - using a temporary random secret (sessions reset on restart).");
 }
 
-// Frontends allowed to call this API (comma separated)
-const CLIENT_ORIGINS = (process.env.CLIENT_ORIGINS || "http://localhost:5110,http://localhost:4000")
-  .split(",")
+// Frontends allowed to call this API (comma separated). On Vercel the deployment's
+// own URLs are added automatically, since the frontend and API share one domain.
+const CLIENT_ORIGINS = [
+  ...(process.env.CLIENT_ORIGINS || "http://localhost:5110,http://localhost:4000").split(","),
+  ...[process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
+    .filter(Boolean)
+    .map((host) => `https://${host}`),
+]
   .map((o) => o.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
 // Init app
 const app = express();
 app.disable("x-powered-by");
-if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1); // behind a reverse proxy / load balancer
+// behind a reverse proxy / load balancer (always the case on Vercel)
+if (process.env.TRUST_PROXY || ON_VERCEL) app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
 
 // Reject query objects like { "$gt": "" } in filters (NoSQL injection)
 mongoose.set("sanitizeFilter", true);
@@ -93,22 +103,51 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .then(seedAdmin)
-  .then(verifyMailer)
-  .catch(err => {
+// ------------------ DATABASE ------------------
+// One shared connection; serverless functions reuse it between requests on a warm instance.
+let dbReady = null;
+function connectDB() {
+  if (!dbReady) {
+    dbReady = mongoose
+      .connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 })
+      .then(async () => {
+        console.log("MongoDB Connected");
+        await seedAdmin();
+        verifyMailer(); // only logs; no need to wait
+      })
+      .catch((err) => {
+        dbReady = null; // retry on the next request
+        throw err;
+      });
+  }
+  return dbReady;
+}
+
+if (!ON_VERCEL) {
+  connectDB().catch((err) => fatal(`MongoDB connection error: ${err.message}`));
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
     console.error("MongoDB connection error:", err.message);
-    process.exit(1);
-  });
+    res.status(503).json({ message: "The service is temporarily unavailable. Please try again shortly." });
+  }
+});
 
 // ------------------ UPLOADS ------------------
-// Images, videos and PDFs up to 10 MB each, stored in Backend/uploads.
+// Images, videos and PDFs. Stored in Vercel Blob when BLOB_READ_WRITE_TOKEN is set
+// (required on Vercel, whose disk is read-only), otherwise in Backend/uploads.
 // The stored file name and extension come only from this allow-list (never from the
 // uploaded name), and the file's first bytes must match the type - so an HTML/SVG file
 // can't be disguised as an image and served as a web page (stored XSS).
+const USE_BLOB = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+// Vercel rejects request bodies over 4.5 MB, so keep uploads below that there
+const MAX_FILE_BYTES = ON_VERCEL ? 4 * 1024 * 1024 : 10 * 1024 * 1024;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!USE_BLOB && !ON_VERCEL) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED_TYPES = {
   "image/jpeg": "jpg",
@@ -135,43 +174,83 @@ const SIGNATURES = {
 function hasValidSignature(file) {
   const ext = ALLOWED_TYPES[file.mimetype];
   try {
-    const fd = fs.openSync(file.path, "r");
-    const head = Buffer.alloc(16);
-    fs.readSync(fd, head, 0, 16, 0);
-    fs.closeSync(fd);
+    let head = file.buffer?.subarray(0, 16);
+    if (!head) {
+      const fd = fs.openSync(file.path, "r");
+      head = Buffer.alloc(16);
+      fs.readSync(fd, head, 0, 16, 0);
+      fs.closeSync(fd);
+    }
     return Boolean(ext && SIGNATURES[ext](head));
   } catch {
     return false;
   }
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ALLOWED_TYPES[file.mimetype]}`),
-});
+const storedName = (file) => `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ALLOWED_TYPES[file.mimetype]}`;
+
+const storage = USE_BLOB || ON_VERCEL
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+      filename: (req, file, cb) => cb(null, storedName(file)),
+    });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024, files: 5, fields: 20, fieldSize: 20 * 1024 },
+  limits: { fileSize: MAX_FILE_BYTES, files: 5, fields: 20, fieldSize: 20 * 1024 },
   fileFilter: (req, file, cb) => {
     const ok = Boolean(ALLOWED_TYPES[file.mimetype]);
     cb(ok ? null : new Error("Only JPG, PNG, GIF, WEBP images, MP4/MOV/WEBM videos or PDF files are allowed"), ok);
   },
 });
-const filePath = (file) => `uploads/${file.filename}`; // forward slashes so the URL works on every OS
-app.use(
-  "/uploads",
-  express.static(UPLOAD_DIR, {
-    dotfiles: "deny",
-    index: false,
-    setHeaders: (res) => {
-      // files are type-checked on upload; the page CSP would stop browsers' built-in PDF viewer
-      res.removeHeader("Content-Security-Policy");
-      res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("Cache-Control", "public, max-age=86400");
-    },
-  })
-);
+
+// Saves validated files and sets `file.stored` to what goes in the database:
+// a Blob URL, or "uploads/<name>" for local disk
+async function storeFiles(files) {
+  if (!files.length) return;
+  if (USE_BLOB) {
+    await Promise.all(
+      files.map(async (file) => {
+        const blob = await put(`proofs/${storedName(file)}`, file.buffer, {
+          access: "public",
+          contentType: file.mimetype,
+          addRandomSuffix: false,
+        });
+        file.stored = blob.url;
+      })
+    );
+  } else if (ON_VERCEL) {
+    throw Object.assign(new Error("File storage is not configured"), { storageMissing: true });
+  } else {
+    files.forEach((file) => (file.stored = `uploads/${file.filename}`)); // forward slashes for URLs
+  }
+}
+
+// Deletes stored files (used when saving the report fails afterwards)
+function removeStored(paths = []) {
+  const blobs = paths.filter((p) => /^https?:\/\//.test(p));
+  if (blobs.length) del(blobs).catch(() => {});
+  paths
+    .filter((p) => p && !/^https?:\/\//.test(p))
+    .forEach((p) => fs.unlink(path.join(__dirname, p), () => {}));
+}
+
+if (!USE_BLOB && !ON_VERCEL) {
+  app.use(
+    "/uploads",
+    express.static(UPLOAD_DIR, {
+      dotfiles: "deny",
+      index: false,
+      setHeaders: (res) => {
+        // files are type-checked on upload; the page CSP would stop browsers' built-in PDF viewer
+        res.removeHeader("Content-Security-Policy");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+      },
+    })
+  );
+}
 
 // ------------------ AUTH HELPERS ------------------
 
@@ -234,16 +313,17 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-const removeFiles = (files = []) => files.forEach((f) => fs.unlink(f.path, () => {}));
+// Deletes temporary files multer wrote to disk (memory uploads need no cleanup)
+const removeFiles = (files = []) => files.forEach((f) => f.path && fs.unlink(f.path, () => {}));
 
-// Runs multer, turns its errors into a readable 400 response and rejects
-// files whose contents don't match their declared type
+// Runs multer, turns its errors into a readable 400 response, rejects files whose
+// contents don't match their declared type, then stores the files (disk or Blob)
 const withUpload = (handler) => (req, res, next) =>
-  handler(req, res, (err) => {
+  handler(req, res, async (err) => {
     const files = [...(req.files || []), ...(req.file ? [req.file] : [])];
     if (err) {
       removeFiles(files);
-      const message = err.code === "LIMIT_FILE_SIZE" ? "Each file must be under 10 MB"
+      const message = err.code === "LIMIT_FILE_SIZE" ? `Each file must be under ${MAX_FILE_BYTES / 1024 / 1024} MB`
         : err.code === "LIMIT_FILE_COUNT" ? "You can attach up to 5 files"
         : err.code === "LIMIT_UNEXPECTED_FILE" ? "Too many files or an unexpected file field"
         : err.code?.startsWith("LIMIT_") ? "The upload is too large"
@@ -254,7 +334,16 @@ const withUpload = (handler) => (req, res, next) =>
       removeFiles(files);
       return res.status(400).json({ message: "One of the files is not a valid image, video or PDF" });
     }
-    next();
+    try {
+      await storeFiles(files);
+      next();
+    } catch (e) {
+      removeFiles(files);
+      console.error("File storage error:", e.message);
+      res.status(e.storageMissing ? 503 : 502).json({
+        message: e.storageMissing ? "File uploads are not configured on this server." : "Could not save the files. Please try again.",
+      });
+    }
   });
 
 const str = (v) => (typeof v === "string" ? v : ""); // ignore non-string JSON values
@@ -593,7 +682,7 @@ const toNumber = (v) => (v === undefined || v === null || String(v).trim() === "
 app.post("/report", reportLimiter, requireUser, withUpload(upload.array("proof", 5)), async (req, res) => {
   const files = req.files || [];
   const fail = (code, message) => {
-    removeFiles(files);
+    removeStored(files.map((f) => f.stored));
     res.status(code).json({ message });
   };
 
@@ -611,7 +700,7 @@ app.post("/report", reportLimiter, requireUser, withUpload(upload.array("proof",
     const lng = toNumber(req.body.lng);
     const hasLocation = Number.isFinite(lat) && Number.isFinite(lng);
 
-    const proofs = files.map(filePath);
+    const proofs = files.map((f) => f.stored);
     const report = await ReportModel.create({
       ...body,
       proof: proofs[0],
@@ -673,7 +762,7 @@ app.get("/api/stats", async (req, res) => {
 app.patch("/api/reports/:id", requireAdmin, withUpload(upload.single("responseProof")), async (req, res) => {
   const files = req.file ? [req.file] : [];
   const fail = (code, message) => {
-    removeFiles(files);
+    removeStored(files.map((f) => f.stored));
     res.status(code).json({ message });
   };
 
@@ -696,7 +785,8 @@ app.patch("/api/reports/:id", requireAdmin, withUpload(upload.single("responsePr
     const statusChanged = status && status !== (report.status || "Pending");
     if (status) report.status = status;
     report.fund = { allocated, utilized };
-    if (req.file) report.responseProof = filePath(req.file);
+    const replacedProof = req.file && report.responseProof;
+    if (req.file) report.responseProof = req.file.stored;
 
     if (statusChanged || note || req.file) {
       const parts = [note, req.file ? "proof of work attached" : ""].filter(Boolean).join(" - ");
@@ -704,6 +794,7 @@ app.patch("/api/reports/:id", requireAdmin, withUpload(upload.single("responsePr
     }
     report.updatedAt = new Date();
     await report.save();
+    if (replacedProof) removeStored([replacedProof]); // old proof of work is no longer referenced
     res.json(report);
   } catch (err) {
     console.error("Update report error:", err);
@@ -724,6 +815,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: "Something went wrong. Please try again." });
 });
 
-// Server start
-const PORT = process.env.PORT || 5003;
-app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+// Server start (locally). On Vercel the exported app is called by api/index.js instead.
+if (!ON_VERCEL) {
+  const PORT = process.env.PORT || 5003;
+  app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+}
+
+export default app;
