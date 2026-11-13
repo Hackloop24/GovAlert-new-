@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment files hold secrets - only the .env.example templates are committed
+.env
+.env.*
+!.env.example
+
+# Files uploaded by users at runtime
+Backend/uploads/*
+!Backend/uploads/.gitkeep
+
+# Build output, logs, OS/editor files
+dist/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

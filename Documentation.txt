@@ -1,0 +1,13 @@
+The setup steps now live in README.md (see "Running locally").
+
+Quick version:
+  1) Copy Backend/.env.example to Backend/.env and fill it in
+     (also Community_portal/.env.example -> Community_portal/.env)
+  2) npm run install:all
+  3) npm run dev   -> open http://localhost:5110
+
+Ports: Backend 5003, GovAlert 5110, Community_portal 4000
+
+If a port is already in use (Windows):
+  netstat -ano | findstr :5003
+  taskkill /PID <PID_from_previous_command> /F

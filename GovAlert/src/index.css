@@ -1,0 +1,193 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+/* ---------- Toasts & dialogs (components/Toaster.jsx) ---------- */
+.ga-toast-stack {
+  position: fixed;
+  top: 76px;
+  right: 16px;
+  z-index: 5000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.ga-toast {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px 16px;
+  background: rgba(31, 41, 55, 0.96);
+  backdrop-filter: blur(8px);
+  color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 4px solid;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  pointer-events: auto;
+}
+.ga-toast-icon { font-size: 20px; margin-top: 1px; }
+.ga-toast-body { flex: 1; min-width: 0; }
+.ga-toast-title { font-weight: 600; color: #f9fafb; line-height: 1.3; }
+.ga-toast-message { font-size: 14px; color: #9ca3af; margin-top: 2px; line-height: 1.4; word-wrap: break-word; }
+.ga-toast .ga-toast-close {
+  padding: 2px 6px;
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  border-radius: 6px;
+  line-height: 1;
+}
+.ga-toast .ga-toast-close:hover { color: #e5e7eb; background: rgba(255, 255, 255, 0.08); }
+.ga-toast-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  opacity: 0.7;
+  transform-origin: left;
+  animation-name: ga-shrink;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.ga-toast-in { animation: ga-slide-in 0.35s cubic-bezier(0.21, 1.02, 0.73, 1) both; }
+.ga-toast-out { animation: ga-slide-out 0.25s ease-in both; }
+
+@keyframes ga-slide-in {
+  from { opacity: 0; transform: translateX(110%) scale(0.95); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes ga-slide-out {
+  from { opacity: 1; transform: translateX(0); max-height: 200px; }
+  to { opacity: 0; transform: translateX(110%); max-height: 0; }
+}
+@keyframes ga-shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+.ga-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(3, 7, 18, 0.65);
+  backdrop-filter: blur(4px);
+  animation: ga-fade 0.2s ease-out both;
+}
+.ga-dialog {
+  width: min(420px, 100%);
+  background: #1f2937;
+  color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 28px 24px 22px;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  animation: ga-pop 0.25s cubic-bezier(0.21, 1.02, 0.73, 1) both;
+}
+.ga-dialog-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+.ga-dialog-title { font-size: 20px; font-weight: 700; color: #f9fafb; margin: 0 0 8px; }
+.ga-dialog-message { color: #9ca3af; font-size: 15px; line-height: 1.5; }
+.ga-dialog-actions { display: flex; gap: 10px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
+.ga-dialog .ga-btn {
+  min-width: 120px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 600;
+  transition: filter 0.15s, transform 0.1s;
+}
+.ga-dialog .ga-btn:hover { filter: brightness(1.12); }
+.ga-dialog .ga-btn:active { transform: scale(0.97); }
+.ga-dialog .ga-btn-secondary { background: #374151; color: #e5e7eb; }
+
+@keyframes ga-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ga-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ga-toast-in, .ga-toast-out, .ga-overlay, .ga-dialog { animation: none; }
+}
