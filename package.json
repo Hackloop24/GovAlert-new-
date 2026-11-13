@@ -12,6 +12,7 @@
     "dev:backend": "cd Backend && npx nodemon --ignore uploads/ index.js",
     "dev:govalert": "npm run dev --prefix GovAlert",
     "dev:community": "npm run dev --prefix Community_portal",
+    "vercel-install": "npm install --include=dev && npm install --prefix Backend && npm install --include=dev --prefix GovAlert && npm install --include=dev --prefix Community_portal",
     "vercel-build": "npm run build --prefix GovAlert && npm run build --prefix Community_portal -- --base=/community/ && node scripts/combine-builds.mjs"
   },
   "devDependencies": {
