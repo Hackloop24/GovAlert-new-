@@ -56,7 +56,12 @@ One Vercel project serves all three parts from a single domain:
 
 `vercel.json` holds the build and routing settings, so no build settings need changing in Vercel.
 
-1. **Database** - create a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster. Add a database
+Everything fits Vercel's free **Hobby** plan (one serverless function, Blob free tier) and MongoDB
+Atlas's free **M0** cluster. The backend runs in Vercel's Mumbai region (`bom1`, set in `vercel.json`);
+create the Atlas cluster in **Mumbai (ap-south-1)** too so the API and database are close together.
+(The Hobby plan is for non-commercial use.)
+
+1. **Database** - create a free [MongoDB Atlas](https://www.mongodb.com/atlas) M0 cluster. Add a database
    user, and under *Network Access* allow `0.0.0.0/0` (Vercel has no fixed IP addresses). Copy the
    connection string (`mongodb+srv://...`).
 2. **Import** - on [vercel.com/new](https://vercel.com/new) import this GitHub repository. Leave the

@@ -3,6 +3,7 @@
   "installCommand": "npm run install:all",
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "dist",
+  "regions": ["bom1"],
   "functions": {
     "api/index.js": {
       "maxDuration": 30
